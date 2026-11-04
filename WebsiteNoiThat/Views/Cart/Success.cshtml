@@ -1,0 +1,71 @@
+﻿@model WebsiteNoiThat.Controllers.CartController.OrderSuccessModel
+@{
+    ViewBag.Title = "Đặt hàng thành công";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="content" style="text-align:center">
+    <div class="section group">
+        <h3 id="title_spmoi" style="color:#28a745; margin: 25px 0 10px;">✔ Đặt hàng thành công!</h3>
+
+        @if (Model != null && Model.Order != null)
+        {
+            <div class="alert alert-success" style="max-width: 700px; margin: 0 auto 20px;">
+                <p><b>Mã đơn hàng:</b> #@Model.Order.OrderId — <a href="/theo-doi-don-hang?id=@Model.Order.OrderId"><i class="fa fa-map-marker"></i> Theo dõi vị trí đơn hàng</a></p>
+                <p><b>Trạng thái:</b> Đang chờ xác nhận</p>
+                <p><b>Phương thức thanh toán:</b> @Model.Order.PaymentMethod</p>
+                @if (Model.Order.PaymentMethod != null && Model.Order.PaymentMethod.Contains("Chuyển khoản"))
+                {
+                    <p style="color:#856404">Đơn hàng được xử lý sau khi chúng tôi nhận được chuyển khoản. Quý khách vui lòng thanh toán theo hướng dẫn trong email xác nhận.</p>
+                }
+            </div>
+
+            <div class="section" style="max-width: 780px; margin: 0 auto;">
+                <h4>Thông tin đơn hàng</h4>
+                <table class="table" style="text-align:left">
+                    <thead>
+                        <tr>
+                            <th>Sản phẩm</th>
+                            <th>Số lượng</th>
+                            <th>Đơn giá</th>
+                            <th>Khuyến mãi</th>
+                            <th>Thành tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in Model.Details)
+                        {
+                            <tr>
+                                <td>@d.Name</td>
+                                <td>@d.Quantity</td>
+                                <td>@d.Price.GetValueOrDefault(0).ToString("N0")₫</td>
+                                <td>@d.Discount.GetValueOrDefault(0) %</td>
+                                <td>@(d.Price.GetValueOrDefault(0) * d.Quantity.GetValueOrDefault(0)).ToString("N0")₫</td>
+                            </tr>
+                        }
+                        <tr>
+                            <td colspan="4" style="text-align:right"><b>Tổng tiền thanh toán</b></td>
+                            <td><b style="color:crimson">@Model.Total.ToString("N0")₫</b></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <table class="table" style="text-align:left">
+                    <tr><td style="width:150px"><b>Người nhận:</b></td><td>@Model.Order.ShipName</td></tr>
+                    <tr><td><b>Số điện thoại:</b></td><td>@Model.Order.ShipPhone</td></tr>
+                    <tr><td><b>Địa chỉ giao:</b></td><td>@Model.Order.ShipAddress</td></tr>
+                    <tr><td><b>Email xác nhận:</b></td><td>@Model.Order.ShipEmail</td></tr>
+                </table>
+                <p>Thông tin đơn hàng đã được gửi tới email của Quý khách.</p>
+                <a href="/" class="btn btn-primary" style="margin: 10px 5px;">Về trang chủ</a>
+                <a href="/gio-hang" class="btn btn-secondary" style="margin: 10px 5px;">Tiếp tục mua hàng</a>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-warning" style="max-width: 700px; margin: 0 auto 20px;">
+                Không tìm thấy đơn hàng vừa đặt. Quý khách có thể xem lại đơn hàng trong mục <a href="/gio-hang">giỏ hàng</a>.
+            </div>
+            <a href="/" class="btn btn-primary">Về trang chủ</a>
+        }
+    </div>
+</div>

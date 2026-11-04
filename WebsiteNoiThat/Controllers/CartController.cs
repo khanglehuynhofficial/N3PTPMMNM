@@ -1,0 +1,472 @@
+
+using Models.DAO;
+using Models.EF;
+using PagedList;
+using System;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Linq;
+using System.Web;
+using System.Web.Mvc;
+using System.Web.Script.Serialization;
+using WebsiteNoiThat.Common;
+using WebsiteNoiThat.Models;
+
+namespace WebsiteNoiThat.Controllers
+{
+    public class CartController : Controller
+    {
+
+        DBNoiThat db = new DBNoiThat();
+        private const string CartSession = "CartSession";
+        private const string HistorySession = "HistorySession";
+
+        public ActionResult Index()
+        {
+            var session = (UserLogin)Session[WebsiteNoiThat.Common.Commoncontent.user_sesion];
+            if (session != null)
+            {
+                var cart = Session[CartSession];
+                var list = new List<CartItem>();
+                if (cart != null)
+                {
+                    ViewBag.Status = "Đang chờ xác nhận";
+                    list = (List<CartItem>)cart;
+                }
+
+                //Tổng kết giỏ hàng: số lượng và thành tiền sau giảm giá
+                double total = 0;
+                int totalQuantity = 0;
+                foreach (var item in list)
+                {
+                    total += Convert.ToDouble(item.Product.Price * item.Quantity - item.Product.Price * item.Product.Discount * 0.01 * item.Quantity);
+                    totalQuantity += item.Quantity;
+                }
+                ViewBag.TotalQuantity = totalQuantity;
+                ViewBag.Total = total;
+
+                return View(list);
+            }
+            else
+            {
+                return Redirect("/dang-nhap");
+            }
+        }
+
+        public JsonResult DeleteAll()
+        {
+            Session[CartSession] = null;
+            return Json(new
+            {
+                status = true
+            });
+        }
+
+        public JsonResult Delete(long id)
+        {
+            var sessionCart = (List<CartItem>)Session[CartSession];
+            sessionCart.RemoveAll(x => x.Product.ProductId == id);
+            Session[CartSession] = sessionCart;
+            return Json(new
+            {
+                status = true
+            });
+        }
+        public ActionResult DeleteItem(long id)
+        {
+            var model = db.OrderDetails.SingleOrDefault(n => n.OrderDetailId == id);
+            var order = db.Orders.SingleOrDefault(o => o.OrderId == model.OrderId);
+
+            if (order.StatusId == 1 || order.StatusId == 2)
+            {
+                // Hoàn lại tồn kho đã trừ trước đó khi hủy sản phẩm khỏi đơn (issue #106)
+                var pro = model.ProductId != null ? db.Products.Find(model.ProductId.Value) : null;
+                if (pro != null)
+                {
+                    pro.Quantity = (pro.Quantity ?? 0) + (model.Quantity ?? 0);
+                }
+                db.OrderDetails.Remove(model);
+                db.SaveChanges();
+            }
+            else
+            {
+                return Redirect("/loi-huy-hang");
+            }
+
+            return RedirectToAction("HistoryCart");
+        }
+        public JsonResult Update(string cartModel)
+        {
+            var jsonCart = new JavaScriptSerializer().Deserialize<List<CartItem>>(cartModel);
+            var sessionCart = (List<CartItem>)Session[CartSession];
+            foreach (var item in sessionCart)
+            {
+                var jsonItem = jsonCart.SingleOrDefault(x => x.Product.ProductId == item.Product.ProductId);
+                if (jsonItem != null)
+                {
+                    // Kiểm tra số lượng sửa có vượt tồn kho không (issue #106)
+                    var soLuongMoi = jsonItem.Quantity < 1 ? 1 : jsonItem.Quantity;
+                    var p = db.Products.Find(item.Product.ProductId);
+                    var ton = p == null ? 0 : (p.Quantity ?? 0);
+                    if (soLuongMoi > ton)
+                    {
+                        return Json(new { status = false, message = "Sản phẩm \"" + item.Product.Name + "\" chỉ còn " + ton + " sản phẩm." });
+                    }
+                    item.Quantity = soLuongMoi;
+                }
+            }
+            Session[CartSession] = sessionCart;
+            return Json(new
+            {
+                status = true
+            });
+        }
+        public ActionResult AddCart(int productId, int quantity)
+        {
+            var product = new ProductDao().ViewDetail(productId);
+            var cart = Session[CartSession];
+
+            // Kiểm tra tồn kho trước khi thêm vào giỏ (issue #106)
+            var listHienTai = (List<CartItem>)cart ?? new List<CartItem>();
+            var trongGio = listHienTai.Where(x => x.Product.ProductId == productId).Sum(x => x.Quantity);
+            var conLai = product.Quantity ?? 0;
+            if (quantity <= 0) quantity = 1;
+            if (conLai <= 0)
+            {
+                TempData["CanhBaoHang"] = "Sản phẩm \"" + product.Name + "\" đã hết hàng.";
+                return RedirectToAction("Index");
+            }
+            if (trongGio + quantity > conLai)
+            {
+                TempData["CanhBaoHang"] = string.Format("Sản phẩm \"{0}\" chỉ còn {1} sản phẩm (bạn đang có {2} trong giỏ).", product.Name, conLai, trongGio);
+                return RedirectToAction("Index");
+            }
+
+            if (cart != null)
+            {
+                var list = (List<CartItem>)cart;
+                if (list.Exists(x => x.Product.ProductId == productId))
+                {
+                    foreach (var item in list)
+                    {
+                        if (item.Product.ProductId == productId)
+                        {
+                            item.Quantity += quantity;
+                        }
+                    }
+                }
+                else
+                {
+                    //tạo mới đối tượng cart item
+                    var item = new CartItem();
+                    item.Product = product;
+                    item.Quantity = quantity;
+                    list.Add(item);
+                }
+                //Gán vào session
+                Session[CartSession] = list;
+                //Session[HistorySession] = list;
+            }
+            else
+            {
+                //tạo mới đối tượng cart item
+                var item = new CartItem();
+                item.Product = product;
+                item.Quantity = quantity;
+                var list = new List<CartItem>();
+                list.Add(item);
+                //Gán vào session
+                Session[CartSession] = list;
+                //Session[HistorySession] = list;
+            }
+            return RedirectToAction("Index");
+        }
+        
+
+        [HttpGet]
+        public ActionResult PayBy()
+        {
+            var session = (UserLogin)Session[WebsiteNoiThat.Common.Commoncontent.user_sesion];
+            if (session != null)
+            {
+                var model = db.Users.SingleOrDefault(n => n.UserId == session.UserId);
+                var cart = Session[CartSession];
+                var list = new List<CartItem>();
+                var total = 0;
+                if (cart != null)
+                {
+                    ViewBag.Status = "Đang chờ xác nhận";
+                    list = (List<CartItem>)cart;
+                    
+                    foreach(CartItem item in list)
+                    {
+                        total = total + Convert.ToInt32(item.Product.Price * item.Quantity - item.Product.Price*item.Product.Discount*0.01 * item.Quantity);
+                    }
+                }
+                ViewBag.ListItem = list;
+                ViewBag.total = total;
+
+                return View(model);
+            }
+            else
+            {
+                return Redirect("/dang-nhap");
+            }
+        }
+
+        [HttpPost]
+        public ActionResult PayBy(User n, string PaymentMethod)
+        {
+            // 1. Kiểm tra User n có bị null không (phòng hờ form không bind dữ liệu)
+            if (n == null)
+            {
+                ModelState.AddModelError("", "Vui lòng điền đầy đủ thông tin nhận hàng.");
+                return View();
+            }
+
+            var session = (UserLogin)Session[WebsiteNoiThat.Common.Commoncontent.user_sesion];
+            var model = session != null ? db.Users.SingleOrDefault(a => a.UserId == session.UserId) : null;
+
+            if (model != null)
+            {
+                // 2. Kiểm tra giỏ hàng có tồn tại không tránh lỗi null ở foreach
+                var cart = (List<CartItem>)Session[CartSession];
+                if (cart == null || cart.Count == 0)
+                {
+                    return RedirectToAction("Index");
+                }
+
+                // Kiểm tra tồn kho từng sản phẩm trước khi chốt đơn (issue #106)
+                var hetHang = new List<string>();
+                foreach (var item in cart)
+                {
+                    var pTontai = db.Products.Find(item.Product.ProductId);
+                    var tonKyLucNay = pTontai == null ? 0 : (pTontai.Quantity ?? 0);
+                    if (tonKyLucNay < item.Quantity)
+                    {
+                        hetHang.Add(item.Product.Name + " (còn " + tonKyLucNay + ")");
+                    }
+                }
+                if (hetHang.Count > 0)
+                {
+                    TempData["CanhBaoHang"] = "Không thể đặt hàng — tồn kho đã thay đổi: " + string.Join("; ", hetHang) + ".";
+                    return RedirectToAction("Index");
+                }
+
+                PaymentMethod = string.IsNullOrWhiteSpace(PaymentMethod) ? "Tiền mặt khi nhận hàng (COD)" : PaymentMethod.Trim();
+                model.UserId = session.UserId;
+                model.Name = n.Name;
+                model.Phone = n.Phone;
+                model.Password = model.Password;
+                model.GroupId = model.GroupId;
+                model.Address = n.Address;
+
+                model.Status = true;
+                model.Email = n.Email;
+                model.Username = session.Username;
+                db.Entry(model).State = System.Data.Entity.EntityState.Modified;
+                db.SaveChanges();
+
+                var order = new Order();
+                order.UpdateDate = DateTime.Now;
+                order.ShipAddress = n.Address;
+                order.ShipPhone = n.Phone;
+                order.ShipName = n.Name;
+                order.ShipEmail = n.Email;
+                order.UserId = session.UserId;
+                order.StatusId = 1;
+                order.PaymentMethod = PaymentMethod;
+
+                var id = new OrderDao().Insert(order);
+                var detailDao = new OrderDetailDao();
+                double total = 0;
+                var htmldata = "<p><b>STT | Tên | Số lượng | Đơn giá | Khuyến mại</b></p>";
+                int count = 0;
+
+                foreach (var item in cart)
+                {
+                    var orderDetail = new OrderDetail();
+                    orderDetail.OrderId = id;
+                    orderDetail.ProductId = item.Product.ProductId;
+
+                    var discountprice = Convert.ToInt32(item.Product.Price - item.Product.Price * item.Product.Discount * 0.01);
+                    orderDetail.Price = discountprice;
+                    orderDetail.Quantity = item.Quantity;
+
+                    detailDao.Insert(orderDetail);
+                    total += discountprice * item.Quantity; // Đã fix lỗi thiếu dấu nhân ở code gốc của bạn
+
+                    var pro = db.Products.FirstOrDefault(m => m.ProductId == item.Product.ProductId);
+                    if (pro != null)
+                    {
+                        pro.Quantity = Math.Max(0, (pro.Quantity ?? 0) - item.Quantity);
+                    }
+
+                    htmldata += "<p>" + count + "  |  " + item.Product.Name + "  |  " + item.Quantity + "  |  " + discountprice.ToString("N0") + " | " + item.Product.Discount.ToString() + " %</p>";
+                    db.SaveChanges();
+                    count += 1;
+                }
+
+                try
+                {
+                    string content = System.IO.File.ReadAllText(Server.MapPath("~/Common/neworder.html"));
+                    content = content.Replace("{{id}}", id.ToString());
+                    content = content.Replace("{{CustomerName}}", n.Name);
+                    content = content.Replace("{{Phone}}", n.Phone != null ? n.Phone.ToString() : "");
+                    content = content.Replace("{{Email}}", n.Email);
+                    content = content.Replace("{{Address}}", n.Address);
+                    content = content.Replace("{{PaymentMethod}}", PaymentMethod);
+                    content = content.Replace("{{Total}}", total.ToString("N0"));
+                    content = content.Replace("{{data}}", htmldata);
+
+                    MailHelper.SendMail(n.Email, "Đơn hàng mới từ NOITHATGO.VN", content);
+                }
+                catch (Exception) { }
+
+                ViewBag.EMAIL = n.Email;
+                return Redirect("/hoan-thanh?OrderId=" + id);
+            }
+            else
+            {
+                return Redirect("/Cart/Error");
+            }
+        }
+
+        /// Trang "Đơn hàng của tôi" cho khách đã đăng nhập (issue #98)
+        public ActionResult MyOrders()
+        {
+            var session = (UserLogin)Session[WebsiteNoiThat.Common.Commoncontent.user_sesion];
+            if (session == null)
+            {
+                return Redirect("/dang-nhap");
+            }
+            var model = new OrderDao().ListByUser(session.UserId);
+            return View(model);
+        }
+
+        public ActionResult HistoryCart(int? page)
+        {
+            int pagenumber = (page ?? 1);
+            int pagesize = 6;
+            var session = (UserLogin)Session[WebsiteNoiThat.Common.Commoncontent.user_sesion];
+
+            var model = (from a in db.OrderDetails
+                         join b in db.Orders
+                         on a.OrderId equals b.OrderId
+                         join c in db.Products
+                         on a.ProductId equals c.ProductId
+                         join d in db.Status on b.StatusId equals d.StatusId
+                         where b.UserId == session.UserId
+
+                         select new HistoryCart
+                         {
+                             OrderDetaiId = a.OrderDetailId,
+                             ProductId = a.ProductId,
+                             Name = c.Name,
+                             Photo = c.Photo,
+                             Price = a.Price,
+                             Quantity = a.Quantity,
+                             Discount = c.Discount,
+                             EndDate = c.EndDate,
+                             StatusId = b.StatusId,
+                             NameStatus = d.Name
+                         }).ToList();
+
+            return View(model.ToPagedList(pagenumber, pagesize));
+
+        }
+
+        /// Thông tin trang "Đặt hàng thành công" (issue #46)
+        public class OrderSuccessDetail
+        {
+            public string Name { get; set; }
+            public string Photo { get; set; }
+            public int? Quantity { get; set; }
+            public int? Price { get; set; }
+            public int? Discount { get; set; }
+        }
+
+        public class OrderSuccessModel
+        {
+            public Order Order { get; set; }
+            public List<OrderSuccessDetail> Details { get; set; }
+            public double Total { get; set; }
+        }
+        public ActionResult Success(int? OrderId)
+        {
+            var session = (UserLogin)Session[WebsiteNoiThat.Common.Commoncontent.user_sesion];
+            if (session == null)
+            {
+                return Redirect("/dang-nhap");
+            }
+
+            // Xoá giỏ hàng sau khi đặt hàng thành công
+            Session["CartSession"] = null;
+
+            // Chỉ hiển thị thông tin đơn hàng vừa tạo, thuộc đúng tài khoản đang đăng nhập
+            var order = OrderId.HasValue
+                ? db.Orders.FirstOrDefault(o => o.OrderId == OrderId.Value && o.UserId == session.UserId)
+                : null;
+            if (order != null)
+            {
+                var model = new OrderSuccessModel
+                {
+                    Order = order,
+                    Details = db.OrderDetails
+                        .Where(d => d.OrderId == order.OrderId)
+                        .Join(db.Products, d => d.ProductId, p => p.ProductId, (d, p) => new
+                        {
+                            d.Quantity,
+                            d.Price,
+                            p.Name,
+                            p.Photo,
+                            p.Discount
+                        }).ToList()
+                        .Select(d => new OrderSuccessDetail
+                        {
+                            Name = d.Name,
+                            Photo = d.Photo,
+                            Quantity = d.Quantity,
+                            Price = d.Price,
+                            Discount = d.Discount
+                        }).ToList()
+                };
+                model.Total = model.Details.Sum(d => d.Price.GetValueOrDefault(0) * d.Quantity.GetValueOrDefault(0));
+                return View(model);
+            }
+            return View(new OrderSuccessModel());
+        }
+
+        public ActionResult Error()
+        {
+            return View();
+        }
+        public ActionResult DeleteError()
+        {
+            var session = (UserLogin)Session[WebsiteNoiThat.Common.Commoncontent.user_sesion];
+
+            var model = (from a in db.OrderDetails
+                         join b in db.Orders
+                         on a.OrderId equals b.OrderId
+                         join c in db.Products
+                         on a.ProductId equals c.ProductId
+                         join d in db.Status on b.StatusId equals d.StatusId
+                         where b.UserId == session.UserId
+
+                         select new HistoryCart
+                         {
+                             OrderDetaiId = a.OrderDetailId,
+                             ProductId = a.ProductId,
+                             Name = c.Name,
+                             Photo = c.Photo,
+                             Price = a.Price,
+                             Quantity = a.Quantity,
+                             Discount = c.Discount,
+                             StatusId = b.StatusId,
+                             NameStatus = d.Name
+                         }).ToList();
+
+            return View(model);
+        }
+    }
+}

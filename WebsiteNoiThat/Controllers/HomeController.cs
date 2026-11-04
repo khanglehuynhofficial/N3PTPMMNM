@@ -1,0 +1,79 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Web;
+using System.Web.Mvc;
+using WebsiteNoiThat.Common;
+using WebsiteNoiThat.Models;
+
+namespace WebsiteNoiThat.Controllers
+{
+    public class HomeController : Controller
+    {
+        public ActionResult Index()
+        {
+            string demoOtp = Session["DemoOtp"] as string;
+            DateTime? demoOtpExpireTime = Session["DemoOtpExpireTime"] as DateTime?;
+            if (!string.IsNullOrEmpty(demoOtp) &&
+                demoOtpExpireTime.HasValue &&
+                DateTime.Now <= demoOtpExpireTime.Value)
+            {
+                ViewBag.DemoOtp = demoOtp;
+            }
+            else
+            {
+                Session.Remove("DemoOtp");
+                Session.Remove("DemoOtpExpireTime");
+            }
+
+            return View();
+        }
+
+        // Trang tĩnh: Giới thiệu
+        public ActionResult About()
+        {
+            ViewBag.Title = "Giới thiệu";
+            return View();
+        }
+
+        // Trang tĩnh: Chính sách & Quy định
+        public ActionResult Rules()
+        {
+            ViewBag.Title = "Chính sách & Quy định";
+            return View();
+        }
+
+        // Trang tĩnh: Chính sách vận chuyển
+        public ActionResult ShippingPolicy()
+        {
+            ViewBag.Title = "Chính sách vận chuyển";
+            return View();
+        }
+
+        // Trang tĩnh: Chính sách thanh toán
+        public ActionResult PaymentPolicy()
+        {
+            ViewBag.Title = "Chính sách thanh toán";
+            return View();
+        }
+        [ChildActionOnly]
+        public PartialViewResult HeaderCart()
+        {
+            var cart = Session[Commoncontent.CartSession];
+            var list = new List<CartItem>();
+            double total = 0;
+            if (cart != null)
+            {
+                list = (List<CartItem>)cart;
+                foreach (var item in list)
+                {
+                    total += Convert.ToDouble(item.Product.Price * item.Quantity - item.Product.Price * item.Product.Discount * 0.01 * item.Quantity);
+                }
+            }
+            ViewBag.Total = total;
+
+            return PartialView(list);
+        }
+
+    }
+}

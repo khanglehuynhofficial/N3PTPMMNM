@@ -1,0 +1,13 @@
+﻿@model List<Models.EF.News>
+
+
+@foreach (var sp in Model)
+{
+
+    <div class="item tintucl">
+        <a href="/tin-tuc/@sp.NewsId"><img src="@Url.Content("~/image/" + sp.Photo)" alt="@sp.Title" /></a>
+        <p><a href="/tin-tuc/@sp.NewsId" title="@sp.Title">@sp.Title</a></p>
+
+    </div>
+}
+

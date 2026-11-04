@@ -1,0 +1,26 @@
+﻿
+@{
+    ViewBag.Title = "Index";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="boxmain">
+    @if (ViewBag.DemoOtp != null)
+    {
+        <div class="alert alert-warning text-center" role="alert">
+            <strong>OTP demo:</strong>
+            <span style="font-size: 24px; font-weight: bold; letter-spacing: 6px;">@ViewBag.DemoOtp</span>
+            <div>Email chưa gửi được qua SMTP. Mã chỉ hiển thị trong phiên demo này và hết hạn sau 5 phút.</div>
+        </div>
+    }
+    @if (TempData["SearchError"] != null)
+    {
+        <div class="alert alert-warning text-center" role="alert">
+            @TempData["SearchError"]
+        </div>
+    }
+    @Html.Action("NewProduct", "Product")
+    @Html.Action("SaleProduct", "Product")
+    @Html.Action("CateKorea", "Product")
+    @Html.Action("CateHavana", "Product")
+</div>
